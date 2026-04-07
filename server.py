@@ -160,13 +160,10 @@ async def infer_python(prompt: str, request: ChatCompletionRequest):
 
 async def infer_cli(prompt: str, request: ChatCompletionRequest):
     model_path = get_model_path()
-    cmd = [
-        "litert-lm", "run",
-        "--model_path", model_path,
-        "--prompt", prompt,
-    ]
+    cmd = ["litert-lm", "run", model_path]
     if BACKEND_TYPE == "gpu":
         cmd.extend(["--backend", "gpu"])
+    cmd.extend(["--prompt", prompt])
 
     try:
         proc = await asyncio.create_subprocess_exec(
