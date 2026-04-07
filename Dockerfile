@@ -1,5 +1,6 @@
 # ============================================
-# Stage 1: Builder - instala dependencias Python
+# MLC-LLM inference server for OrangePi 5
+# Mali G610 GPU acceleration via OpenCL
 # ============================================
 FROM debian:bookworm-slim AS builder
 
@@ -9,26 +10,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-venv \
     python3-dev \
     build-essential \
+    git \
     && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-
-COPY requirements.txt .
 
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+    /opt/venv/bin/pip install --no-cache-dir \
+    --pre mlc-llm \
+    -f https://mlc.ai/wheels && \
+    /opt/venv/bin/pip install --no-cache-dir huggingface-hub
 
 # ============================================
-# Stage 2: Runtime - imagem final leve
+# Runtime
 # ============================================
 FROM debian:bookworm-slim
 
 LABEL maintainer="edsonperes"
 LABEL org.opencontainers.image.source="https://github.com/edsonperes/litert-lm-server"
-LABEL org.opencontainers.image.description="LiteRT-LM inference server with OpenAI-compatible API for OrangePi 5"
+LABEL org.opencontainers.image.description="MLC-LLM inference server with GPU acceleration for OrangePi 5"
 
-# Deps runtime: Python, OpenCL, libs graficas para Mali
+# Runtime deps: Python, OpenCL, Mali GPU libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-venv \
@@ -41,7 +42,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-dri3-0 \
     libdrm2 \
     libgbm1 \
+    libvulkan1 \
+    mesa-vulkan-drivers \
     wget \
+    curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -59,29 +63,21 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV VIRTUAL_ENV="/opt/venv"
 
-# Diretorio de trabalho
 WORKDIR /app
 
-# Copiar codigo da aplicacao
-COPY server.py .
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
-# Variaveis de ambiente padrao
+# Variaveis de ambiente
+ENV MODEL_REPO=mlc-ai/gemma-2b-it-q4f16_1-MLC
 ENV MODEL_DIR=/data/models
-ENV MODEL_FILE=gemma-4-E2B-it.litertlm
-ENV MODEL_REPO=litert-community/gemma-4-E2B-it-litert-lm
-ENV MODEL_ID=gemma-4-E2B-it
 ENV PORT=8000
-ENV INFERENCE_BACKEND=cli
-ENV BACKEND_TYPE=cpu
 
-# Volume para persistencia do modelo
 VOLUME /data/models
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health')" || exit 1
+    CMD curl -sf http://localhost:${PORT}/v1/models || exit 1
 
 ENTRYPOINT ["/app/entrypoint.sh"]

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/Ed$on/Desktop/liteRT/**)",
+      "Bash(gh repo:*)",
+      "Bash(gh run:*)",
+      "Bash(gh api:*)",
+      "Bash(docker manifest:*)",
+      "Bash(skopeo list-tags:*)",
+      "Bash(docker buildx:*)",
+      "Bash(python3 -m json.tool)",
+      "WebSearch",
+      "WebFetch(domain:blog.mlc.ai)",
+      "WebFetch(domain:milas.dev)"
+    ]
+  }
+}

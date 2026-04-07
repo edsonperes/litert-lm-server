@@ -1,67 +1,58 @@
 #!/bin/bash
 set -e
 
+MODEL_REPO="${MODEL_REPO:-mlc-ai/gemma-2b-it-q4f16_1-MLC}"
 MODEL_DIR="${MODEL_DIR:-/data/models}"
-MODEL_FILE="${MODEL_FILE:-gemma-4-E2B-it.litertlm}"
-MODEL_REPO="${MODEL_REPO:-litert-community/gemma-4-E2B-it-litert-lm}"
 PORT="${PORT:-8000}"
-BACKEND_TYPE="${BACKEND_TYPE:-cpu}"
 
 echo "============================================"
-echo "  LiteRT-LM Server para OrangePi 5"
+echo "  MLC-LLM Server para OrangePi 5 (GPU)"
 echo "============================================"
-echo "Modelo: ${MODEL_REPO}/${MODEL_FILE}"
-echo "Backend: ${INFERENCE_BACKEND:-python} (${BACKEND_TYPE})"
+echo "Modelo: ${MODEL_REPO}"
 echo "Porta: ${PORT}"
 echo "============================================"
 
-mkdir -p "${MODEL_DIR}"
-
-# Verificar GPU se backend=gpu
-if [ "${BACKEND_TYPE}" = "gpu" ]; then
-    echo "[GPU] Verificando OpenCL/Mali..."
-    if command -v clinfo &>/dev/null; then
-        PLATFORMS=$(clinfo -l 2>/dev/null | grep -c "Platform" || true)
-        if [ "${PLATFORMS}" -gt 0 ]; then
-            echo "[GPU] OpenCL disponivel - ${PLATFORMS} plataforma(s) detectada(s)"
-            clinfo -l 2>/dev/null || true
-        else
-            echo "[GPU] AVISO: Nenhuma plataforma OpenCL detectada"
-            echo "[GPU] Verifique se /lib/firmware/mali_csffw.bin esta montado"
-            echo "[GPU] Continuando sem aceleracao GPU..."
-        fi
+# Verificar GPU OpenCL/Mali
+echo "[GPU] Verificando OpenCL/Mali..."
+if command -v clinfo &>/dev/null; then
+    PLATFORMS=$(clinfo -l 2>/dev/null | grep -c "Platform" || true)
+    if [ "${PLATFORMS}" -gt 0 ]; then
+        echo "[GPU] OpenCL disponivel - ${PLATFORMS} plataforma(s)"
+        clinfo -l 2>/dev/null || true
     else
-        echo "[GPU] AVISO: clinfo nao encontrado, impossivel verificar GPU"
+        echo "[GPU] AVISO: Nenhuma plataforma OpenCL detectada"
+        echo "[GPU] Verifique se /lib/firmware/mali_csffw.bin esta montado"
     fi
+else
+    echo "[GPU] AVISO: clinfo nao encontrado"
 fi
 
+mkdir -p "${MODEL_DIR}"
+
 # Download do modelo se nao existir
-MODEL_PATH="${MODEL_DIR}/${MODEL_FILE}"
-if [ ! -f "${MODEL_PATH}" ]; then
+MODEL_PATH="${MODEL_DIR}/$(basename ${MODEL_REPO})"
+if [ ! -d "${MODEL_PATH}" ] || [ -z "$(ls -A "${MODEL_PATH}" 2>/dev/null)" ]; then
     echo "[Download] Modelo nao encontrado em ${MODEL_PATH}"
-    echo "[Download] Baixando de ${MODEL_REPO}..."
-    echo "[Download] Isso pode levar alguns minutos (~2.6GB)..."
+    echo "[Download] Baixando ${MODEL_REPO} do HuggingFace..."
+    echo "[Download] Isso pode levar alguns minutos..."
 
     python3 -c "
-from huggingface_hub import hf_hub_download
+from huggingface_hub import snapshot_download
 import os
 
-repo_id = os.environ.get('MODEL_REPO', 'litert-community/gemma-4-E2B-it-litert-lm')
-filename = os.environ.get('MODEL_FILE', 'gemma-4-E2B-it.litertlm')
+repo_id = os.environ.get('MODEL_REPO', 'mlc-ai/gemma-2b-it-q4f16_1-MLC')
 model_dir = os.environ.get('MODEL_DIR', '/data/models')
 
-print(f'Baixando {filename} de {repo_id}...')
-path = hf_hub_download(
+print(f'Baixando {repo_id}...')
+path = snapshot_download(
     repo_id=repo_id,
-    filename=filename,
-    local_dir=model_dir,
-    local_dir_use_symlinks=False,
+    local_dir=os.path.join(model_dir, repo_id.split('/')[-1]),
 )
 print(f'Modelo salvo em: {path}')
 "
 
-    if [ -f "${MODEL_PATH}" ]; then
-        SIZE=$(du -h "${MODEL_PATH}" | cut -f1)
+    if [ -d "${MODEL_PATH}" ]; then
+        SIZE=$(du -sh "${MODEL_PATH}" | cut -f1)
         echo "[Download] Concluido! Tamanho: ${SIZE}"
     else
         echo "[Download] ERRO: Falha no download do modelo"
@@ -69,9 +60,12 @@ print(f'Modelo salvo em: {path}')
         exit 1
     fi
 else
-    SIZE=$(du -h "${MODEL_PATH}" | cut -f1)
+    SIZE=$(du -sh "${MODEL_PATH}" | cut -f1)
     echo "[Modelo] Encontrado em ${MODEL_PATH} (${SIZE})"
 fi
 
-echo "[Server] Iniciando servidor na porta ${PORT}..."
-exec uvicorn server:app --host 0.0.0.0 --port "${PORT}" --log-level info
+echo "[Server] Iniciando MLC-LLM serve na porta ${PORT} com GPU..."
+exec python3 -m mlc_llm serve "${MODEL_PATH}" \
+    --host 0.0.0.0 \
+    --port "${PORT}" \
+    --device opencl

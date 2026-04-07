@@ -1,8 +1,8 @@
-name: litert-lm-server
+name: mlc-llm-server
 services:
-  litert-lm:
-    image: ghcr.io/edsonperes/litert-lm-server:0.2.1
-    container_name: litert-lm-server
+  mlc-llm:
+    image: ghcr.io/edsonperes/litert-lm-server:0.3.0
+    container_name: mlc-llm-server
     restart: unless-stopped
     privileged: true
     ports:
@@ -10,16 +10,12 @@ services:
         published: "8000"
         protocol: tcp
     environment:
-      MODEL_REPO: litert-community/gemma-4-E2B-it-litert-lm
-      MODEL_FILE: gemma-4-E2B-it.litertlm
+      MODEL_REPO: mlc-ai/gemma-2b-it-q4f16_1-MLC
       MODEL_DIR: /data/models
-      MODEL_ID: gemma-4-E2B-it
       PORT: "8000"
-      INFERENCE_BACKEND: cli
-      BACKEND_TYPE: cpu
     volumes:
       - type: bind
-        source: /DATA/AppData/litert-lm-server/models
+        source: /DATA/AppData/mlc-llm-server/models
         target: /data/models
       - type: bind
         source: /lib/firmware
@@ -33,20 +29,8 @@ services:
       envs:
         - container: MODEL_REPO
           description:
-            en_US: HuggingFace model repository
-            pt_BR: Repositorio do modelo no HuggingFace
-        - container: MODEL_FILE
-          description:
-            en_US: Model filename
-            pt_BR: Nome do arquivo do modelo
-        - container: INFERENCE_BACKEND
-          description:
-            en_US: "Inference backend: python (CPU) or cli (GPU support)"
-            pt_BR: "Backend de inferencia: python (CPU) ou cli (suporte GPU)"
-        - container: BACKEND_TYPE
-          description:
-            en_US: "Backend type: cpu or gpu"
-            pt_BR: "Tipo de backend: cpu ou gpu"
+            en_US: "MLC-LLM model from HuggingFace (e.g. mlc-ai/gemma-2b-it-q4f16_1-MLC)"
+            pt_BR: "Modelo MLC-LLM do HuggingFace (ex: mlc-ai/gemma-2b-it-q4f16_1-MLC)"
       ports:
         - container: "8000"
           description:
@@ -65,33 +49,33 @@ services:
 x-casaos:
   architectures:
     - arm64
-  main: litert-lm
+  main: mlc-llm
   author: edsonperes
   category: AI
   description:
-    en_US: On-device LLM inference server using Google LiteRT-LM with Gemma 4 E2B (2B). Provides an OpenAI-compatible API endpoint for use with OpenWebUI. Optimized for OrangePi 5 with Mali G610 GPU acceleration via OpenCL.
-    pt_BR: Servidor de inferencia LLM local usando Google LiteRT-LM com Gemma 4 E2B (2B). Fornece endpoint API compativel com OpenAI para uso com OpenWebUI. Otimizado para OrangePi 5 com aceleracao GPU Mali G610 via OpenCL.
+    en_US: GPU-accelerated LLM inference server using MLC-LLM with Gemma 2B on Mali G610 (OpenCL). Provides OpenAI-compatible API for OpenWebUI. Optimized for OrangePi 5 / RK3588.
+    pt_BR: Servidor de inferencia LLM com aceleracao GPU usando MLC-LLM com Gemma 2B na Mali G610 (OpenCL). Fornece API compativel com OpenAI para OpenWebUI. Otimizado para OrangePi 5 / RK3588.
   developer: Community
   icon: https://raw.githubusercontent.com/edsonperes/litert-lm-server/main/icon.png
   tagline:
-    en_US: Local AI inference with Gemma 4 on ARM64
-    pt_BR: Inferencia IA local com Gemma 4 no ARM64
+    en_US: GPU-accelerated AI with Gemma 2B on ARM64
+    pt_BR: IA com aceleracao GPU e Gemma 2B no ARM64
   title:
-    en_US: LiteRT-LM Server
-    pt_BR: LiteRT-LM Server
+    en_US: MLC-LLM Server
+    pt_BR: MLC-LLM Server
   tips:
     before_install:
       en_US: |
         Requirements:
         - OrangePi 5 or RK3588 board with 4GB+ RAM
-        - Model download (~2.6GB) happens on first launch
-        - For GPU: ensure mali_csffw.bin is in /lib/firmware
+        - Mali G610 GPU with OpenCL support
+        - Model download happens on first launch
         - Connect OpenWebUI: http://<device-ip>:8000/v1
       pt_BR: |
         Requisitos:
         - OrangePi 5 ou placa RK3588 com 4GB+ RAM
-        - Download do modelo (~2.6GB) ocorre na primeira execucao
-        - Para GPU: garanta que mali_csffw.bin esta em /lib/firmware
+        - GPU Mali G610 com suporte OpenCL
+        - Download do modelo ocorre na primeira execucao
         - Conectar OpenWebUI: http://<ip-dispositivo>:8000/v1
-  index: /health
+  index: /v1/models
   port_map: "8000"
