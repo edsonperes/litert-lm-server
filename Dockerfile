@@ -74,7 +74,7 @@ ENV MODEL_REPO=litert-community/gemma-4-E2B-it-litert-lm
 ENV MODEL_ID=gemma-4-E2B-it
 ENV PORT=8000
 ENV INFERENCE_BACKEND=cli
-ENV BACKEND_TYPE=gpu
+ENV BACKEND_TYPE=cpu
 
 # Volume para persistencia do modelo
 VOLUME /data/models
