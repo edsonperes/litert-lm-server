@@ -15,8 +15,8 @@ services:
       MODEL_DIR: /data/models
       MODEL_ID: gemma-4-E2B-it
       PORT: "8000"
-      INFERENCE_BACKEND: python
-      BACKEND_TYPE: cpu
+      INFERENCE_BACKEND: cli
+      BACKEND_TYPE: gpu
     volumes:
       - type: bind
         source: /DATA/AppData/litert-lm-server/models
