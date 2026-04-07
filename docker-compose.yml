@@ -17,7 +17,6 @@ services:
       PORT: "8000"
       INFERENCE_BACKEND: python
       BACKEND_TYPE: cpu
-      HUGGING_FACE_HUB_TOKEN: ""
     volumes:
       - type: bind
         source: /DATA/AppData/litert-lm-server/models
@@ -48,10 +47,6 @@ services:
           description:
             en_US: "Backend type: cpu or gpu"
             pt_BR: "Tipo de backend: cpu ou gpu"
-        - container: HUGGING_FACE_HUB_TOKEN
-          description:
-            en_US: HuggingFace token for gated models (optional)
-            pt_BR: Token HuggingFace para modelos restritos (opcional)
       ports:
         - container: "8000"
           description:

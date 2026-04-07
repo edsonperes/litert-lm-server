@@ -42,10 +42,6 @@ if [ ! -f "${MODEL_PATH}" ]; then
     echo "[Download] Baixando de ${MODEL_REPO}..."
     echo "[Download] Isso pode levar alguns minutos (~2.6GB)..."
 
-    if [ -n "${HUGGING_FACE_HUB_TOKEN}" ]; then
-        export HF_TOKEN="${HUGGING_FACE_HUB_TOKEN}"
-    fi
-
     python3 -c "
 from huggingface_hub import hf_hub_download
 import os
@@ -69,7 +65,7 @@ print(f'Modelo salvo em: {path}')
         echo "[Download] Concluido! Tamanho: ${SIZE}"
     else
         echo "[Download] ERRO: Falha no download do modelo"
-        echo "[Download] Verifique o token HuggingFace e a conexao"
+        echo "[Download] Verifique a conexao com a internet"
         exit 1
     fi
 else

@@ -75,7 +75,6 @@ ENV MODEL_ID=gemma-4-E2B-it
 ENV PORT=8000
 ENV INFERENCE_BACKEND=python
 ENV BACKEND_TYPE=cpu
-ENV HUGGING_FACE_HUB_TOKEN=""
 
 # Volume para persistencia do modelo
 VOLUME /data/models
