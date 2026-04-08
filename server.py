@@ -178,19 +178,30 @@ async def chat_completions(request: ChatCompletionRequest):
             yield f"data: {json.dumps(first)}\n\n"
 
             try:
+                # Coletar resposta completa via API Python
                 with engine_lock:
                     with engine.create_conversation() as conv:
+                        full_text = ""
                         for chunk_data in conv.send_message_async(user_msg):
-                            text = ""
                             if isinstance(chunk_data, str):
-                                text = chunk_data
+                                full_text += chunk_data
                             elif isinstance(chunk_data, dict):
                                 for item in chunk_data.get("content", []):
                                     if item.get("type") == "text":
-                                        text += item["text"]
-                            if text:
-                                chunk = create_chunk(text, request.model)
-                                yield f"data: {json.dumps(chunk)}\n\n"
+                                        full_text += item["text"]
+
+                if not full_text:
+                    full_text = "..."
+
+                # Streaming palavra por palavra com delay
+                words = full_text.split(" ")
+                for i, word in enumerate(words):
+                    token = word if i == 0 else f" {word}"
+                    chunk = create_chunk(token, request.model)
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                    if i % 3 == 0:
+                        await asyncio.sleep(0.02)
+
             except Exception as e:
                 logger.error(f"Streaming error: {e}")
                 chunk = create_chunk("...", request.model)
