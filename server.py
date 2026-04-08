@@ -6,13 +6,13 @@ import asyncio
 import logging
 import threading
 import queue
-from typing import Optional
+from typing import Optional, Union
 
 import litert_lm
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("litert-lm-server")
@@ -39,7 +39,20 @@ engine_lock = threading.Lock()
 
 class ChatMessage(BaseModel):
     role: str
-    content: str
+    content: Union[str, list]
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def normalize_content(cls, v):
+        if isinstance(v, list):
+            parts = []
+            for item in v:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    parts.append(item)
+            return " ".join(parts)
+        return v
 
 
 class ChatCompletionRequest(BaseModel):
