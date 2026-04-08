@@ -67,11 +67,19 @@ def get_model_path() -> str:
     return os.path.join(MODEL_DIR, MODEL_FILE)
 
 
-def extract_last_user_message(messages: list[ChatMessage]) -> str:
-    for msg in reversed(messages):
-        if msg.role == "user":
-            return msg.content
-    return messages[-1].content if messages else ""
+def build_prompt(messages: list[ChatMessage]) -> str:
+    """Constroi prompt completo com system prompt e historico de conversa."""
+    parts = []
+    for msg in messages:
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        if msg.role == "system":
+            parts.append(f"<start_of_turn>user\n[System Instructions]\n{content}<end_of_turn>")
+        elif msg.role == "user":
+            parts.append(f"<start_of_turn>user\n{content}<end_of_turn>")
+        elif msg.role == "assistant":
+            parts.append(f"<start_of_turn>model\n{content}<end_of_turn>")
+    parts.append("<start_of_turn>model\n")
+    return "\n".join(parts)
 
 
 def init_engine():
@@ -182,8 +190,8 @@ async def chat_completions(request: ChatCompletionRequest):
         else:
             raise HTTPException(status_code=503, detail="Modelo nao disponivel. Aguarde o download.")
 
-    user_msg = extract_last_user_message(request.messages)
-    logger.info(f"Prompt: {user_msg[:80]}...")
+    prompt = build_prompt(request.messages)
+    logger.info(f"Prompt ({len(request.messages)} msgs, {len(prompt)} chars): {prompt[-80:]}...")
 
     if request.stream:
         async def stream_response():
@@ -197,7 +205,7 @@ async def chat_completions(request: ChatCompletionRequest):
                 try:
                     with engine_lock:
                         with engine.create_conversation() as conv:
-                            for chunk_data in conv.send_message_async(user_msg):
+                            for chunk_data in conv.send_message_async(prompt):
                                 text = ""
                                 if isinstance(chunk_data, str):
                                     text = chunk_data
@@ -241,7 +249,7 @@ async def chat_completions(request: ChatCompletionRequest):
         try:
             with engine_lock:
                 with engine.create_conversation() as conv:
-                    response = conv.send_message(user_msg)
+                    response = conv.send_message(prompt)
                     if isinstance(response, str):
                         content = response
                     elif isinstance(response, dict):
