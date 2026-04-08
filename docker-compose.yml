@@ -1,73 +1,76 @@
-name: mlc-llm-server
+name: litert-lm-server
 services:
-  mlc-llm:
-    image: ghcr.io/edsonperes/litert-lm-server:0.3.2
-    container_name: mlc-llm-server
+  litert-lm:
+    image: ghcr.io/edsonperes/litert-lm-server:1.0.0
+    container_name: litert-lm-server
     restart: unless-stopped
-    privileged: true
     ports:
       - target: 8000
         published: "8000"
         protocol: tcp
     environment:
+      MODEL_REPO: litert-community/gemma-4-E2B-it-litert-lm
+      MODEL_FILE: gemma-4-E2B-it.litertlm
+      MODEL_DIR: /data/models
+      MODEL_ID: gemma-4-E2B-it
       PORT: "8000"
-      MODEL: RedPajama-INCITE-Chat-3B-v1-q4f16_1
     volumes:
       - type: bind
-        source: /lib/firmware
-        target: /lib/firmware
-        read_only: true
+        source: /DATA/AppData/litert-lm-server/models
+        target: /data/models
     deploy:
       resources:
         reservations:
           memory: "4096M"
     x-casaos:
       envs:
-        - container: MODEL
+        - container: MODEL_REPO
           description:
-            en_US: Model name (pre-loaded in image)
-            pt_BR: Nome do modelo (pre-carregado na imagem)
+            en_US: HuggingFace model repository
+            pt_BR: Repositorio do modelo no HuggingFace
+        - container: MODEL_FILE
+          description:
+            en_US: Model filename
+            pt_BR: Nome do arquivo do modelo
       ports:
         - container: "8000"
           description:
             en_US: OpenAI-compatible API port
             pt_BR: Porta da API compativel com OpenAI
       volumes:
-        - container: /lib/firmware
+        - container: /data/models
           description:
-            en_US: Mali GPU firmware (read-only)
-            pt_BR: Firmware da GPU Mali (somente leitura)
+            en_US: Model storage (persists downloaded models)
+            pt_BR: Armazenamento de modelos (persiste downloads)
 
 x-casaos:
   architectures:
     - arm64
-  main: mlc-llm
+  main: litert-lm
   author: edsonperes
   category: AI
   description:
-    en_US: GPU-accelerated LLM inference on Mali G610 using MLC-LLM with RedPajama 3B. OpenAI-compatible API for OpenWebUI. Runs on OrangePi 5 / RK3588.
-    pt_BR: Inferencia LLM com aceleracao GPU Mali G610 usando MLC-LLM com RedPajama 3B. API compativel com OpenAI para OpenWebUI. Roda no OrangePi 5 / RK3588.
+    en_US: LLM inference server using Google LiteRT-LM with Gemma 4 E2B (2B). OpenAI-compatible API for OpenWebUI. Optimized for OrangePi 5 / ARM64.
+    pt_BR: Servidor de inferencia LLM usando Google LiteRT-LM com Gemma 4 E2B (2B). API compativel com OpenAI para OpenWebUI. Otimizado para OrangePi 5 / ARM64.
   developer: Community
   icon: https://raw.githubusercontent.com/edsonperes/litert-lm-server/main/icon.png
   tagline:
-    en_US: GPU-accelerated LLM on OrangePi 5
-    pt_BR: LLM com GPU no OrangePi 5
+    en_US: Gemma 4 E2B AI on OrangePi 5
+    pt_BR: Gemma 4 E2B IA no OrangePi 5
   title:
-    en_US: MLC-LLM Server
-    pt_BR: MLC-LLM Server
+    en_US: LiteRT-LM Gemma
+    pt_BR: LiteRT-LM Gemma
   tips:
     before_install:
       en_US: |
         Requirements:
-        - OrangePi 5 or RK3588 board with 4GB+ RAM
-        - Mali G610 GPU (OpenCL)
-        - Image is ~4.5GB (model included)
+        - OrangePi 5 or ARM64 board with 4GB+ RAM
+        - Model download (~2.6GB) on first launch
         - Connect OpenWebUI: http://<device-ip>:8000/v1
       pt_BR: |
         Requisitos:
-        - OrangePi 5 ou placa RK3588 com 4GB+ RAM
-        - GPU Mali G610 (OpenCL)
-        - Imagem tem ~4.5GB (modelo incluso)
+        - OrangePi 5 ou placa ARM64 com 4GB+ RAM
+        - Download do modelo (~2.6GB) na primeira execucao
         - Conectar OpenWebUI: http://<ip-dispositivo>:8000/v1
   index: /v1/models
   port_map: "8000"

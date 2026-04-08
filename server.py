@@ -2,7 +2,7 @@ import os
 import json
 import time
 import uuid
-import subprocess
+import asyncio
 import logging
 from typing import Optional
 
@@ -12,14 +12,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("mlc-llm-server")
+logger = logging.getLogger("litert-lm-server")
 
+MODEL_DIR = os.environ.get("MODEL_DIR", "/data/models")
+MODEL_FILE = os.environ.get("MODEL_FILE", "gemma-4-E2B-it.litertlm")
+MODEL_ID = os.environ.get("MODEL_ID", "gemma-4-E2B-it")
 PORT = int(os.environ.get("PORT", 8000))
-MODEL = os.environ.get("MODEL", "RedPajama-INCITE-Chat-3B-v1-q4f16_1")
-MLC_DIR = "/mlc-llm"
-MLC_CLI = f"{MLC_DIR}/build/mlc_chat_cli"
 
-app = FastAPI(title="MLC-LLM GPU Server", version="0.3.0")
+app = FastAPI(title="LiteRT-LM Server", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,96 +36,59 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = MODEL
+    model: str = MODEL_ID
     messages: list[ChatMessage]
     stream: bool = False
     temperature: Optional[float] = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: Optional[int] = Field(default=2048, ge=1, le=8192)
 
 
-def extract_user_message(messages: list[ChatMessage]) -> str:
-    """Extrai apenas a ultima mensagem do usuario para enviar ao CLI."""
+def get_model_path() -> str:
+    return os.path.join(MODEL_DIR, MODEL_FILE)
+
+
+def extract_last_user_message(messages: list[ChatMessage]) -> str:
     for msg in reversed(messages):
         if msg.role == "user":
             return msg.content
     return messages[-1].content if messages else ""
 
 
-def run_inference(messages: list[ChatMessage]) -> str:
-    user_msg = extract_user_message(messages)
-    logger.info(f"Prompt: {user_msg[:100]}...")
+async def run_inference(messages: list[ChatMessage]) -> str:
+    user_msg = extract_last_user_message(messages)
+    model_path = get_model_path()
+
+    logger.info(f"Prompt: {user_msg[:80]}...")
+
+    cmd = ["litert-lm", "run", model_path, "--backend", "cpu", "--prompt", user_msg]
 
     try:
-        env = os.environ.copy()
-        env["LD_LIBRARY_PATH"] = f"{MLC_DIR}/build/"
-
-        # Envia mensagem + /exit para sair do CLI
-        cli_input = f"{user_msg}\n/exit\n"
-
-        proc = subprocess.run(
-            [MLC_CLI, "--local-id", MODEL, "--device", "mali"],
-            input=cli_input,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            cwd=MLC_DIR,
-            env=env,
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
 
-        output = proc.stdout
-        logger.info(f"Raw output length: {len(output)}")
+        output = stdout.decode("utf-8", errors="replace").strip()
 
-        # Extrair resposta do bot entre <bot>: e <human>:
-        # O formato do CLI eh: <human>: [input] <bot>: [resposta] <human>:
-        import re
+        if proc.returncode != 0:
+            err = stderr.decode("utf-8", errors="replace")
+            logger.error(f"CLI error: {err[:300]}")
+            return "Desculpe, ocorreu um erro ao processar sua mensagem."
 
-        # Pegar todas as respostas do bot
-        bot_responses = re.findall(r'<bot>:\s*(.*?)(?=<human|/exit|\Z)', output, re.DOTALL)
+        if output:
+            logger.info(f"Response: {output[:80]}...")
+            return output
 
-        if bot_responses:
-            # Pegar a primeira resposta real (pular as de system prompts)
-            response = bot_responses[0].strip()
-            # Limpar caracteres de controle e espaços extras
-            response = re.sub(r'\s+', ' ', response).strip()
-            if response:
-                logger.info(f"Response: {response[:100]}...")
-                return response
+        return "..."
 
-        # Fallback: tentar extrair qualquer texto apos "Loading finished"
-        if "Loading finished" in output:
-            after_load = output.split("Loading finished")[-1]
-            # Remover linhas de sistema
-            lines = after_load.split("\n")
-            clean_lines = []
-            skip_patterns = [
-                "Running system", "System prompts", "<human>:",
-                "Use /", "/exit", "/help", "/stats", "/reset",
-                "/reload", "Use MLC", "Use model", "Loading",
-                "arm_release_ver", "You can use"
-            ]
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                if any(line.startswith(p) or p in line for p in skip_patterns):
-                    continue
-                if line.startswith("<bot>:"):
-                    line = line.replace("<bot>:", "").strip()
-                clean_lines.append(line)
-
-            response = " ".join(clean_lines).strip()
-            if response:
-                return response
-
-        if proc.stderr:
-            logger.error(f"CLI stderr: {proc.stderr[:500]}")
-
-        raise RuntimeError("Nenhuma resposta gerada pelo modelo")
-
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("Inference timeout (120s)")
+    except asyncio.TimeoutError:
+        logger.error("Inference timeout (120s)")
+        return "Desculpe, o tempo de processamento excedeu o limite."
     except FileNotFoundError:
-        raise RuntimeError(f"mlc_chat_cli not found at {MLC_CLI}")
+        logger.error("litert-lm CLI not found")
+        return "Erro: litert-lm nao encontrado."
 
 
 def create_response(content: str, model: str) -> dict:
@@ -170,7 +133,13 @@ def create_chunk(content: str, model: str, finish_reason=None) -> dict:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": MODEL, "device": "mali-gpu"}
+    model_path = get_model_path()
+    return {
+        "status": "ok" if os.path.exists(model_path) else "waiting_for_model",
+        "model": MODEL_ID,
+        "model_exists": os.path.exists(model_path),
+        "backend": "cpu",
+    }
 
 
 @app.get("/")
@@ -184,10 +153,10 @@ async def list_models():
         "object": "list",
         "data": [
             {
-                "id": MODEL,
+                "id": MODEL_ID,
                 "object": "model",
                 "created": 1712534400,
-                "owned_by": "mlc-ai",
+                "owned_by": "litert-community",
             }
         ],
     }
@@ -195,14 +164,14 @@ async def list_models():
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatCompletionRequest):
+    model_path = get_model_path()
+    if not os.path.exists(model_path):
+        raise HTTPException(status_code=503, detail="Modelo nao disponivel. Aguarde o download.")
+
     try:
-        response_text = run_inference(request.messages)
-    except RuntimeError as e:
-        logger.error(f"Inference error: {e}")
-        # Retorna resposta vazia em vez de 500 para nao quebrar o OpenWebUI
-        response_text = "..."
+        response_text = await run_inference(request.messages)
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f"Error: {e}")
         response_text = "..."
 
     if request.stream:
@@ -211,7 +180,6 @@ async def chat_completions(request: ChatCompletionRequest):
             first["choices"][0]["delta"] = {"role": "assistant"}
             yield f"data: {json.dumps(first)}\n\n"
 
-            # Enviar resposta em chunks de palavras
             words = response_text.split(" ")
             for i, word in enumerate(words):
                 token = word if i == 0 else f" {word}"

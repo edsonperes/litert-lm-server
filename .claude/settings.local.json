@@ -18,7 +18,14 @@
       "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(t['name']\\) for t in data.get\\('results',[]\\)]\")",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(curl -sL \"https://raw.githubusercontent.com/milas/rock5-toolchain/main/extra/mlc-llm/Dockerfile\")"
+      "Bash(curl -sL \"https://raw.githubusercontent.com/milas/rock5-toolchain/main/extra/mlc-llm/Dockerfile\")",
+      "Bash(curl -s \"https://api.github.com/repos/mlc-ai/binary-mlc-llm-libs/contents/\")",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(f['name']\\) for f in data if 'mali' in f['name'].lower\\(\\)]\")",
+      "Bash(curl -s \"https://api.github.com/repos/mlc-ai/binary-mlc-llm-libs/git/trees/main\")",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(t['path']\\) for t in data.get\\('tree',[]\\) if 'mali' in t['path'].lower\\(\\)]\")",
+      "WebFetch(domain:ai.google.dev)",
+      "WebFetch(domain:discuss.ai.google.dev)",
+      "WebFetch(domain:llm.mlc.ai)"
     ]
   }
 }
