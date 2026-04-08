@@ -198,7 +198,12 @@ async def chat_completions(request: ChatCompletionRequest):
     try:
         response_text = run_inference(request.messages)
     except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Inference error: {e}")
+        # Retorna resposta vazia em vez de 500 para nao quebrar o OpenWebUI
+        response_text = "..."
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        response_text = "..."
 
     if request.stream:
         async def stream_response():
