@@ -4,8 +4,10 @@ import time
 import uuid
 import asyncio
 import logging
+import threading
 from typing import Optional
 
+import litert_lm
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +21,7 @@ MODEL_FILE = os.environ.get("MODEL_FILE", "gemma-4-E2B-it.litertlm")
 MODEL_ID = os.environ.get("MODEL_ID", "gemma-4-E2B-it")
 PORT = int(os.environ.get("PORT", 8000))
 
-app = FastAPI(title="LiteRT-LM Server", version="1.0.0")
+app = FastAPI(title="LiteRT-LM Server", version="1.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,6 +30,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Engine global - inicializado no startup
+engine = None
+engine_lock = threading.Lock()
 
 
 class ChatMessage(BaseModel):
@@ -54,41 +60,13 @@ def extract_last_user_message(messages: list[ChatMessage]) -> str:
     return messages[-1].content if messages else ""
 
 
-async def run_inference(messages: list[ChatMessage]) -> str:
-    user_msg = extract_last_user_message(messages)
+def init_engine():
+    global engine
     model_path = get_model_path()
-
-    logger.info(f"Prompt: {user_msg[:80]}...")
-
-    cmd = ["litert-lm", "run", model_path, "--backend", "cpu", "--prompt", user_msg]
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-
-        output = stdout.decode("utf-8", errors="replace").strip()
-
-        if proc.returncode != 0:
-            err = stderr.decode("utf-8", errors="replace")
-            logger.error(f"CLI error: {err[:300]}")
-            return "Desculpe, ocorreu um erro ao processar sua mensagem."
-
-        if output:
-            logger.info(f"Response: {output[:80]}...")
-            return output
-
-        return "..."
-
-    except asyncio.TimeoutError:
-        logger.error("Inference timeout (120s)")
-        return "Desculpe, o tempo de processamento excedeu o limite."
-    except FileNotFoundError:
-        logger.error("litert-lm CLI not found")
-        return "Erro: litert-lm nao encontrado."
+    if not os.path.exists(model_path):
+        raise RuntimeError(f"Modelo nao encontrado em {model_path}")
+    engine = litert_lm.Engine(model_path, backend=litert_lm.Backend.CPU)
+    logger.info("Engine LiteRT-LM inicializado (CPU)")
 
 
 def create_response(content: str, model: str) -> dict:
@@ -131,14 +109,28 @@ def create_chunk(content: str, model: str, finish_reason=None) -> dict:
     return chunk
 
 
+@app.on_event("startup")
+async def startup():
+    model_path = get_model_path()
+    if os.path.exists(model_path):
+        try:
+            init_engine()
+        except Exception as e:
+            logger.warning(f"Engine nao inicializado no startup: {e}")
+    else:
+        logger.info(f"Modelo nao encontrado, aguardando download...")
+
+
 @app.get("/health")
 async def health():
     model_path = get_model_path()
     return {
-        "status": "ok" if os.path.exists(model_path) else "waiting_for_model",
+        "status": "ok" if engine else "waiting_for_model",
         "model": MODEL_ID,
         "model_exists": os.path.exists(model_path),
+        "engine_loaded": engine is not None,
         "backend": "cpu",
+        "streaming": True,
     }
 
 
@@ -164,15 +156,20 @@ async def list_models():
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatCompletionRequest):
-    model_path = get_model_path()
-    if not os.path.exists(model_path):
-        raise HTTPException(status_code=503, detail="Modelo nao disponivel. Aguarde o download.")
+    global engine
 
-    try:
-        response_text = await run_inference(request.messages)
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        response_text = "..."
+    if engine is None:
+        model_path = get_model_path()
+        if os.path.exists(model_path):
+            try:
+                init_engine()
+            except Exception as e:
+                raise HTTPException(status_code=503, detail=f"Erro ao carregar modelo: {e}")
+        else:
+            raise HTTPException(status_code=503, detail="Modelo nao disponivel. Aguarde o download.")
+
+    user_msg = extract_last_user_message(request.messages)
+    logger.info(f"Prompt: {user_msg[:80]}...")
 
     if request.stream:
         async def stream_response():
@@ -180,10 +177,23 @@ async def chat_completions(request: ChatCompletionRequest):
             first["choices"][0]["delta"] = {"role": "assistant"}
             yield f"data: {json.dumps(first)}\n\n"
 
-            words = response_text.split(" ")
-            for i, word in enumerate(words):
-                token = word if i == 0 else f" {word}"
-                chunk = create_chunk(token, request.model)
+            try:
+                with engine_lock:
+                    with engine.create_conversation() as conv:
+                        for chunk_data in conv.send_message_async(user_msg):
+                            text = ""
+                            if isinstance(chunk_data, str):
+                                text = chunk_data
+                            elif isinstance(chunk_data, dict):
+                                for item in chunk_data.get("content", []):
+                                    if item.get("type") == "text":
+                                        text += item["text"]
+                            if text:
+                                chunk = create_chunk(text, request.model)
+                                yield f"data: {json.dumps(chunk)}\n\n"
+            except Exception as e:
+                logger.error(f"Streaming error: {e}")
+                chunk = create_chunk("...", request.model)
                 yield f"data: {json.dumps(chunk)}\n\n"
 
             final = create_chunk("", request.model, finish_reason="stop")
@@ -196,7 +206,26 @@ async def chat_completions(request: ChatCompletionRequest):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
     else:
-        return JSONResponse(create_response(response_text, request.model))
+        try:
+            with engine_lock:
+                with engine.create_conversation() as conv:
+                    response = conv.send_message(user_msg)
+                    if isinstance(response, str):
+                        content = response
+                    elif isinstance(response, dict):
+                        parts = []
+                        for item in response.get("content", []):
+                            if item.get("type") == "text":
+                                parts.append(item["text"])
+                        content = "".join(parts)
+                    else:
+                        content = str(response)
+        except Exception as e:
+            logger.error(f"Inference error: {e}")
+            content = "..."
+
+        logger.info(f"Response: {content[:80]}...")
+        return JSONResponse(create_response(content, request.model))
 
 
 if __name__ == "__main__":
