@@ -1,7 +1,7 @@
 name: mlc-llm-server
 services:
   mlc-llm:
-    image: ghcr.io/edsonperes/litert-lm-server:0.3.1
+    image: ghcr.io/edsonperes/litert-lm-server:0.3.2
     container_name: mlc-llm-server
     restart: unless-stopped
     privileged: true
