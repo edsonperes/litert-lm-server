@@ -43,26 +43,28 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = Field(default=2048, ge=1, le=8192)
 
 
-def format_prompt(messages: list[ChatMessage]) -> str:
-    parts = []
-    for msg in messages:
-        if msg.role == "system":
-            parts.append(f"System: {msg.content}")
-        elif msg.role == "user":
-            parts.append(f"User: {msg.content}")
-        elif msg.role == "assistant":
-            parts.append(f"Assistant: {msg.content}")
-    return "\n".join(parts)
+def extract_user_message(messages: list[ChatMessage]) -> str:
+    """Extrai apenas a ultima mensagem do usuario para enviar ao CLI."""
+    for msg in reversed(messages):
+        if msg.role == "user":
+            return msg.content
+    return messages[-1].content if messages else ""
 
 
-def run_inference(prompt: str) -> str:
+def run_inference(messages: list[ChatMessage]) -> str:
+    user_msg = extract_user_message(messages)
+    logger.info(f"Prompt: {user_msg[:100]}...")
+
     try:
         env = os.environ.copy()
         env["LD_LIBRARY_PATH"] = f"{MLC_DIR}/build/"
 
+        # Envia mensagem + /exit para sair do CLI
+        cli_input = f"{user_msg}\n/exit\n"
+
         proc = subprocess.run(
             [MLC_CLI, "--local-id", MODEL, "--device", "mali"],
-            input=f"{prompt}\n/exit\n",
+            input=cli_input,
             capture_output=True,
             text=True,
             timeout=120,
@@ -70,29 +72,55 @@ def run_inference(prompt: str) -> str:
             env=env,
         )
 
-        output = proc.stdout.strip()
+        output = proc.stdout
+        logger.info(f"Raw output length: {len(output)}")
 
-        # Filtrar linhas de output do CLI (prompts, loading messages, etc)
-        lines = output.split("\n")
-        response_lines = []
-        capture = False
-        for line in lines:
-            # Pular linhas de sistema do CLI
-            if line.startswith("Use /") or line.startswith("Loading") or line.startswith("Running"):
-                continue
-            if ">>> " in line:
-                capture = True
-                continue
-            if capture and line.strip():
-                response_lines.append(line)
+        # Extrair resposta do bot entre <bot>: e <human>:
+        # O formato do CLI eh: <human>: [input] <bot>: [resposta] <human>:
+        import re
 
-        response = "\n".join(response_lines).strip()
+        # Pegar todas as respostas do bot
+        bot_responses = re.findall(r'<bot>:\s*(.*?)(?=<human|/exit|\Z)', output, re.DOTALL)
 
-        if not response and proc.stderr:
-            logger.error(f"CLI stderr: {proc.stderr}")
-            raise RuntimeError(f"Inference failed: {proc.stderr[:200]}")
+        if bot_responses:
+            # Pegar a primeira resposta real (pular as de system prompts)
+            response = bot_responses[0].strip()
+            # Limpar caracteres de controle e espaços extras
+            response = re.sub(r'\s+', ' ', response).strip()
+            if response:
+                logger.info(f"Response: {response[:100]}...")
+                return response
 
-        return response if response else output
+        # Fallback: tentar extrair qualquer texto apos "Loading finished"
+        if "Loading finished" in output:
+            after_load = output.split("Loading finished")[-1]
+            # Remover linhas de sistema
+            lines = after_load.split("\n")
+            clean_lines = []
+            skip_patterns = [
+                "Running system", "System prompts", "<human>:",
+                "Use /", "/exit", "/help", "/stats", "/reset",
+                "/reload", "Use MLC", "Use model", "Loading",
+                "arm_release_ver", "You can use"
+            ]
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                if any(line.startswith(p) or p in line for p in skip_patterns):
+                    continue
+                if line.startswith("<bot>:"):
+                    line = line.replace("<bot>:", "").strip()
+                clean_lines.append(line)
+
+            response = " ".join(clean_lines).strip()
+            if response:
+                return response
+
+        if proc.stderr:
+            logger.error(f"CLI stderr: {proc.stderr[:500]}")
+
+        raise RuntimeError("Nenhuma resposta gerada pelo modelo")
 
     except subprocess.TimeoutExpired:
         raise RuntimeError("Inference timeout (120s)")
@@ -167,10 +195,8 @@ async def list_models():
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatCompletionRequest):
-    prompt = format_prompt(request.messages)
-
     try:
-        response_text = run_inference(prompt)
+        response_text = run_inference(request.messages)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
