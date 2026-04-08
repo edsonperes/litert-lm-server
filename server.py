@@ -5,6 +5,7 @@ import uuid
 import asyncio
 import logging
 import threading
+import queue
 from typing import Optional
 
 import litert_lm
@@ -177,34 +178,41 @@ async def chat_completions(request: ChatCompletionRequest):
             first["choices"][0]["delta"] = {"role": "assistant"}
             yield f"data: {json.dumps(first)}\n\n"
 
-            try:
-                # Coletar resposta completa via API Python
-                with engine_lock:
-                    with engine.create_conversation() as conv:
-                        full_text = ""
-                        for chunk_data in conv.send_message_async(user_msg):
-                            if isinstance(chunk_data, str):
-                                full_text += chunk_data
-                            elif isinstance(chunk_data, dict):
-                                for item in chunk_data.get("content", []):
-                                    if item.get("type") == "text":
-                                        full_text += item["text"]
+            q = queue.Queue()
 
-                if not full_text:
-                    full_text = "..."
+            def run_inference_thread():
+                try:
+                    with engine_lock:
+                        with engine.create_conversation() as conv:
+                            for chunk_data in conv.send_message_async(user_msg):
+                                text = ""
+                                if isinstance(chunk_data, str):
+                                    text = chunk_data
+                                elif isinstance(chunk_data, dict):
+                                    for item in chunk_data.get("content", []):
+                                        if item.get("type") == "text":
+                                            text += item["text"]
+                                if text:
+                                    q.put(text)
+                except Exception as e:
+                    logger.error(f"Streaming error: {e}")
+                    q.put(None)
+                finally:
+                    q.put(None)
 
-                # Streaming palavra por palavra com delay
-                words = full_text.split(" ")
-                for i, word in enumerate(words):
-                    token = word if i == 0 else f" {word}"
-                    chunk = create_chunk(token, request.model)
-                    yield f"data: {json.dumps(chunk)}\n\n"
-                    if i % 3 == 0:
-                        await asyncio.sleep(0.02)
+            thread = threading.Thread(target=run_inference_thread, daemon=True)
+            thread.start()
 
-            except Exception as e:
-                logger.error(f"Streaming error: {e}")
-                chunk = create_chunk("...", request.model)
+            while True:
+                try:
+                    text = await asyncio.get_event_loop().run_in_executor(
+                        None, q.get, True, 120
+                    )
+                except Exception:
+                    break
+                if text is None:
+                    break
+                chunk = create_chunk(text, request.model)
                 yield f"data: {json.dumps(chunk)}\n\n"
 
             final = create_chunk("", request.model, finish_reason="stop")
