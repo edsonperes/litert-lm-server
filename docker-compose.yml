@@ -1,7 +1,7 @@
 name: mlc-llm-server
 services:
   mlc-llm:
-    image: ghcr.io/edsonperes/litert-lm-server:0.3.0
+    image: ghcr.io/edsonperes/litert-lm-server:0.3.1
     container_name: mlc-llm-server
     restart: unless-stopped
     privileged: true
@@ -10,13 +10,9 @@ services:
         published: "8000"
         protocol: tcp
     environment:
-      MODEL_REPO: mlc-ai/gemma-2b-it-q4f16_1-MLC
-      MODEL_DIR: /data/models
       PORT: "8000"
+      MODEL: RedPajama-INCITE-Chat-3B-v1-q4f16_1
     volumes:
-      - type: bind
-        source: /DATA/AppData/mlc-llm-server/models
-        target: /data/models
       - type: bind
         source: /lib/firmware
         target: /lib/firmware
@@ -27,20 +23,16 @@ services:
           memory: "4096M"
     x-casaos:
       envs:
-        - container: MODEL_REPO
+        - container: MODEL
           description:
-            en_US: "MLC-LLM model from HuggingFace (e.g. mlc-ai/gemma-2b-it-q4f16_1-MLC)"
-            pt_BR: "Modelo MLC-LLM do HuggingFace (ex: mlc-ai/gemma-2b-it-q4f16_1-MLC)"
+            en_US: Model name (pre-loaded in image)
+            pt_BR: Nome do modelo (pre-carregado na imagem)
       ports:
         - container: "8000"
           description:
             en_US: OpenAI-compatible API port
             pt_BR: Porta da API compativel com OpenAI
       volumes:
-        - container: /data/models
-          description:
-            en_US: Model storage (persists downloaded models)
-            pt_BR: Armazenamento de modelos (persiste downloads)
         - container: /lib/firmware
           description:
             en_US: Mali GPU firmware (read-only)
@@ -53,13 +45,13 @@ x-casaos:
   author: edsonperes
   category: AI
   description:
-    en_US: GPU-accelerated LLM inference server using MLC-LLM with Gemma 2B on Mali G610 (OpenCL). Provides OpenAI-compatible API for OpenWebUI. Optimized for OrangePi 5 / RK3588.
-    pt_BR: Servidor de inferencia LLM com aceleracao GPU usando MLC-LLM com Gemma 2B na Mali G610 (OpenCL). Fornece API compativel com OpenAI para OpenWebUI. Otimizado para OrangePi 5 / RK3588.
+    en_US: GPU-accelerated LLM inference on Mali G610 using MLC-LLM with RedPajama 3B. OpenAI-compatible API for OpenWebUI. Runs on OrangePi 5 / RK3588.
+    pt_BR: Inferencia LLM com aceleracao GPU Mali G610 usando MLC-LLM com RedPajama 3B. API compativel com OpenAI para OpenWebUI. Roda no OrangePi 5 / RK3588.
   developer: Community
   icon: https://raw.githubusercontent.com/edsonperes/litert-lm-server/main/icon.png
   tagline:
-    en_US: GPU-accelerated AI with Gemma 2B on ARM64
-    pt_BR: IA com aceleracao GPU e Gemma 2B no ARM64
+    en_US: GPU-accelerated LLM on OrangePi 5
+    pt_BR: LLM com GPU no OrangePi 5
   title:
     en_US: MLC-LLM Server
     pt_BR: MLC-LLM Server
@@ -68,14 +60,14 @@ x-casaos:
       en_US: |
         Requirements:
         - OrangePi 5 or RK3588 board with 4GB+ RAM
-        - Mali G610 GPU with OpenCL support
-        - Model download happens on first launch
+        - Mali G610 GPU (OpenCL)
+        - Image is ~4.5GB (model included)
         - Connect OpenWebUI: http://<device-ip>:8000/v1
       pt_BR: |
         Requisitos:
         - OrangePi 5 ou placa RK3588 com 4GB+ RAM
-        - GPU Mali G610 com suporte OpenCL
-        - Download do modelo ocorre na primeira execucao
+        - GPU Mali G610 (OpenCL)
+        - Imagem tem ~4.5GB (modelo incluso)
         - Conectar OpenWebUI: http://<ip-dispositivo>:8000/v1
   index: /v1/models
   port_map: "8000"

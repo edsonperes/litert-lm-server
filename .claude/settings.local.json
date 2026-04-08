@@ -11,7 +11,14 @@
       "Bash(python3 -m json.tool)",
       "WebSearch",
       "WebFetch(domain:blog.mlc.ai)",
-      "WebFetch(domain:milas.dev)"
+      "WebFetch(domain:milas.dev)",
+      "WebFetch(domain:hub.docker.com)",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(m['platform']['architecture'],m['platform']['os']\\) for m in data.get\\('manifests',[]\\)]\")",
+      "Bash(curl -s \"https://hub.docker.com/v2/repositories/milas/mlc-llm/tags?page_size=20\")",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(t['name']\\) for t in data.get\\('results',[]\\)]\")",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -sL \"https://raw.githubusercontent.com/milas/rock5-toolchain/main/extra/mlc-llm/Dockerfile\")"
     ]
   }
 }
