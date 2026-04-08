@@ -1,7 +1,7 @@
 name: litert-lm-server
 services:
   litert-lm:
-    image: ghcr.io/edsonperes/litert-lm-server:1.1.1
+    image: ghcr.io/edsonperes/litert-lm-server:1.1.2
     container_name: litert-lm-server
     restart: unless-stopped
     ports:
