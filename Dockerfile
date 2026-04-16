@@ -44,6 +44,7 @@ WORKDIR /app
 
 COPY server.py .
 COPY entrypoint.sh .
+COPY static/ ./static/
 RUN chmod +x entrypoint.sh
 
 ENV MODEL_DIR=/data/models

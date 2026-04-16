@@ -25,7 +25,17 @@
       "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(t['path']\\) for t in data.get\\('tree',[]\\) if 'mali' in t['path'].lower\\(\\)]\")",
       "WebFetch(domain:ai.google.dev)",
       "WebFetch(domain:discuss.ai.google.dev)",
-      "WebFetch(domain:llm.mlc.ai)"
+      "WebFetch(domain:llm.mlc.ai)",
+      "Bash(curl -s \"https://huggingface.co/api/models/google/gemma-2b-it-tflite\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(s['rfilename']\\) for s in d.get\\('siblings',[]\\)]\")",
+      "Bash(gh auth:*)",
+      "Bash(mkdir -p '/c/Users/Ed$on/Desktop/liteRT/static')",
+      "Bash(curl -sL https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/public/index.html -o '/c/Users/Ed$on/Desktop/liteRT/static/index.html')",
+      "Bash(curl -sL https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/public/bundle.js -o '/c/Users/Ed$on/Desktop/liteRT/static/bundle.js')",
+      "Bash(curl -sL https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/public/bundle.css -o '/c/Users/Ed$on/Desktop/liteRT/static/bundle.css')",
+      "Bash(curl -sL https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/public/loading.html -o '/c/Users/Ed$on/Desktop/liteRT/static/loading.html')",
+      "Bash(grep -oP '\\(?:fetch|url\\)\\\\s*[\\\\\\(=]\\\\s*[\"\\\\x27`]/[a-zA-Z0-9/_.-]+' static/bundle.js)",
+      "Bash(grep -oP '`[^`]*/\\(v1|slots|props|health|chat\\)[^`]*`' static/bundle.js)"
     ]
   }
 }
