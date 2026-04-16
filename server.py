@@ -10,7 +10,7 @@ from typing import Optional, Union
 
 import litert_lm
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
@@ -158,7 +158,111 @@ async def health():
 
 @app.get("/")
 async def root():
-    return await health()
+    return await chat_ui()
+
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_ui():
+    return """<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gemma 4 E2B - Chat</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1a2e;color:#e0e0e0;height:100vh;display:flex;flex-direction:column}
+header{background:#16213e;padding:12px 20px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #0f3460}
+header h1{font-size:18px;color:#e94560}
+header span{font-size:12px;color:#888;background:#0f3460;padding:3px 8px;border-radius:10px}
+#chat{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:80%;padding:12px 16px;border-radius:16px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;font-size:14px}
+.msg.user{align-self:flex-end;background:#0f3460;color:#fff;border-bottom-right-radius:4px}
+.msg.assistant{align-self:flex-start;background:#16213e;color:#e0e0e0;border-bottom-left-radius:4px;border:1px solid #0f3460}
+.msg.assistant .cursor{display:inline-block;width:8px;height:16px;background:#e94560;animation:blink .8s infinite;vertical-align:text-bottom;margin-left:2px}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+#input-area{background:#16213e;padding:12px 20px;display:flex;gap:10px;border-top:1px solid #0f3460}
+#input{flex:1;padding:12px 16px;border:1px solid #0f3460;border-radius:24px;background:#1a1a2e;color:#fff;font-size:14px;outline:none;resize:none;max-height:120px;font-family:inherit}
+#input:focus{border-color:#e94560}
+#send{padding:12px 24px;background:#e94560;color:#fff;border:none;border-radius:24px;cursor:pointer;font-size:14px;font-weight:600;transition:background .2s}
+#send:hover{background:#c73a52}
+#send:disabled{background:#555;cursor:not-allowed}
+.typing{color:#888;font-style:italic;font-size:13px;padding:4px 16px}
+</style>
+</head>
+<body>
+<header>
+<h1>Gemma 4 E2B</h1>
+<span>LiteRT-LM / CPU</span>
+<span>OrangePi 5</span>
+</header>
+<div id="chat"></div>
+<div id="input-area">
+<textarea id="input" rows="1" placeholder="Digite sua mensagem..." autofocus></textarea>
+<button id="send" onclick="sendMsg()">Enviar</button>
+</div>
+<script>
+const chat=document.getElementById('chat'),input=document.getElementById('input'),btn=document.getElementById('send');
+let messages=[];
+input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg()}});
+input.addEventListener('input',()=>{input.style.height='auto';input.style.height=Math.min(input.scrollHeight,120)+'px'});
+
+function addMsg(role,text){
+  const d=document.createElement('div');
+  d.className='msg '+role;
+  d.textContent=text;
+  chat.appendChild(d);
+  chat.scrollTop=chat.scrollHeight;
+  return d;
+}
+
+async function sendMsg(){
+  const text=input.value.trim();
+  if(!text)return;
+  input.value='';input.style.height='auto';
+  btn.disabled=true;
+  addMsg('user',text);
+  messages.push({role:'user',content:text});
+
+  const el=addMsg('assistant','');
+  el.innerHTML='<span class="cursor"></span>';
+  let full='';
+
+  try{
+    const res=await fetch('/v1/chat/completions',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'"""+MODEL_ID+"""',messages:messages,stream:true})
+    });
+    const reader=res.body.getReader();
+    const dec=new TextDecoder();
+    let buf='';
+    while(true){
+      const{done,value}=await reader.read();
+      if(done)break;
+      buf+=dec.decode(value,{stream:true});
+      const lines=buf.split('\\n');
+      buf=lines.pop();
+      for(const line of lines){
+        if(!line.startsWith('data: ')||line==='data: [DONE]')continue;
+        try{
+          const j=JSON.parse(line.slice(6));
+          const c=j.choices?.[0]?.delta?.content;
+          if(c){full+=c;el.textContent=full}
+        }catch{}
+      }
+    }
+  }catch(e){full='Erro: '+e.message;el.textContent=full}
+
+  el.innerHTML=el.textContent;
+  messages.push({role:'assistant',content:full});
+  btn.disabled=false;
+  input.focus();
+  chat.scrollTop=chat.scrollHeight;
+}
+</script>
+</body>
+</html>"""
 
 
 @app.get("/v1/models")
